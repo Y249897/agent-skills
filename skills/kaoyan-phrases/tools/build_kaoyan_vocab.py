@@ -572,7 +572,13 @@ def read_text(src):
                 if any(cells):
                     parts.append("\t".join(cells))
         return "\n".join(x for x in parts if x)
-    return p.read_text(encoding="utf-8")
+    raw = p.read_bytes()
+    for enc in ("utf-8-sig", "gb18030"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("不是 UTF-8 也不是 GBK 编码，请另存为 UTF-8 后重试")
 
 
 def main(src=None, outdir=None, existing=None, source=None, add=None, refresh=False):
@@ -597,7 +603,12 @@ def main(src=None, outdir=None, existing=None, source=None, add=None, refresh=Fa
         print(f"写入：{out.resolve()}（xlsx / csv / docx 三份同步更新）")
         return 0
 
-    entries = list(old_rows) if old_rows else seed_entries()
+    # 内置词表始终参与匹配；总表里的条目优先，保留用户改过的词头、释义与频次
+    entries = seed_entries()
+    by_text = {e["text"].lower(): e for e in entries}
+    for r in old_rows:
+        by_text[r["text"].lower()] = r
+    entries = list(by_text.values())
     manual = None
     if add:
         part = [x.strip() for x in add.split("|")]
@@ -609,6 +620,9 @@ def main(src=None, outdir=None, existing=None, source=None, add=None, refresh=Fa
         text = read_text(src)
     except OSError as exc:
         print(f"读不到材料：{src}（{exc.strerror or exc}）")
+        return 1
+    except (UnicodeDecodeError, ValueError) as exc:
+        print(f"读不到材料：{src}（{exc}）")
         return 1
 
     counted = count_entries(text, entries)
@@ -664,13 +678,10 @@ if __name__ == "__main__":
     if not refresh and not positional:
         print(USAGE)
         sys.exit(1)
-    sys.exit(
-        main(
-            positional[0] if positional else None,
-            positional[1] if len(positional) > 1 else None,
-            opts["existing"],
-            opts["source"],
-            opts["add"],
-            refresh,
-        )
-    )
+    # --refresh 时第一个位置参数是产出目录，不是材料
+    if refresh:
+        src, outdir = None, (positional[0] if positional else None)
+    else:
+        src = positional[0] if positional else None
+        outdir = positional[1] if len(positional) > 1 else None
+    sys.exit(main(src, outdir, opts["existing"], opts["source"], opts["add"], refresh))
