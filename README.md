@@ -1,5 +1,7 @@
 # Agent Skills
 
+[中文](README.md) | [English](README.en.md)
+
 一组给 AI 编程助手（DSH、Claude Code 等）用的**技能包**：每个技能解决一类重复劳动，装上就能按名调用。
 
 ## 收录
