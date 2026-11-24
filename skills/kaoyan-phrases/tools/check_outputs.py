@@ -99,18 +99,18 @@ def main():
     else:
         lg = wb["处理记录"]
         lh = [c.value for c in lg[1]]
-        if lh != ["日期", "来源材料", "新增", "更新", "总条数"]:
-            fail(msgs, f"处理记录表头应为 [日期, 来源材料, 新增, 更新, 总条数]，实际 {lh}")
+        if lh != ["日期", "来源材料", "新增", "更新", "删除", "总条数"]:
+            fail(msgs, f"处理记录表头应为 [日期, 来源材料, 新增, 更新, 删除, 总条数]，实际 {lh}")
         logs = [tuple(r) for r in lg.iter_rows(min_row=2, values_only=True) if r[0]]
         running = 0
         for l in logs:
-            if int(l[2]) < 0 or int(l[3]) < 0:
-                fail(msgs, f"处理记录新增/更新为负：{l}")
-            running += int(l[2])
-            if int(l[4]) != running:
-                fail(msgs, f"处理记录累计条数对不上：{l}（前几行新增累计应为 {running}）")
-        if logs and int(logs[-1][4]) != len(rows):
-            fail(msgs, f"末行总条数 {logs[-1][4]} 与当前 {len(rows)} 不符")
+            if int(l[2]) < 0 or int(l[3]) < 0 or int(l[4]) < 0:
+                fail(msgs, f"处理记录新增/更新/删除为负：{l}")
+            running += int(l[2]) - int(l[4])
+            if int(l[5]) != running:
+                fail(msgs, f"处理记录累计条数对不上：{l}（前几行净增累计应为 {running}）")
+        if logs and int(logs[-1][5]) != len(rows):
+            fail(msgs, f"末行总条数 {logs[-1][5]} 与当前 {len(rows)} 不符")
         print(f"处理记录：{len(logs)} 行")
 
     # ---- Word 讲义
