@@ -273,7 +273,13 @@ def load_existing(path):
         )
     log = []
     if "处理记录" in wb.sheetnames:
-        log = [list(x) for x in wb["处理记录"].iter_rows(min_row=2, values_only=True) if x and x[0]]
+        for x in wb["处理记录"].iter_rows(min_row=2, values_only=True):
+            if not (x and x[0]):
+                continue
+            rec = [x[i] if i < len(x) else None for i in range(6)]
+            if len(x) == 5:  # 旧版没有「删除」列
+                rec = [x[0], x[1], x[2], x[3], 0, x[4]]
+            log.append(rec)
     return rows, log
 
 
@@ -393,6 +399,10 @@ def _update_docx(path, rows, log, cut, accent, grey):
             key = row.cells[0].text.replace("★", "").strip()
             if key:
                 seen[key] = row
+        want = {e["text"] for e in rows}
+        for key, row in list(seen.items()):
+            if key not in want:
+                row._tr.getparent().remove(row._tr)
         for e in rows:
             row = seen.get(e["text"])
             if row is None:
@@ -546,10 +556,10 @@ def write_outputs(rows, outdir, log, keep_from=None):
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:E{ws.max_row}"
 
-    header(lg, ["日期", "来源材料", "新增", "更新", "总条数"])
+    header(lg, ["日期", "来源材料", "新增", "更新", "删除", "总条数"])
     for r in log:
-        lg.append(list(r[:5]))
-    for i, w_ in enumerate([20, 40, 8, 8, 10], start=1):
+        lg.append(list(r[:6]))
+    for i, w_ in enumerate([20, 40, 8, 8, 8, 10], start=1):
         lg.column_dimensions[get_column_letter(i)].width = w_
     lg.freeze_panes = "A2"
 
@@ -575,7 +585,7 @@ def read_text(src):
     return p.read_text(encoding="utf-8")
 
 
-def main(src=None, outdir=None, existing=None, source=None, add=None, refresh=False):
+def main(src=None, outdir=None, existing=None, source=None, adds=None, drops=None, refresh=False, force=False):
     if existing:
         out = Path(existing).parent
     else:
@@ -597,13 +607,29 @@ def main(src=None, outdir=None, existing=None, source=None, add=None, refresh=Fa
         print(f"写入：{out.resolve()}（xlsx / csv / docx 三份同步更新）")
         return 0
 
+    src_name = source or (Path(src).name if src else "手动")
+    if not force and src_name in {str(r[1]) for r in log if len(r) > 1 and r[1]}:
+        print(f"「{src_name}」已并入过，继续会重复累加频次；换个 --source 名字，或加 --force 强制重并。")
+        return 3
+
     entries = list(old_rows) if old_rows else seed_entries()
-    manual = None
-    if add:
-        part = [x.strip() for x in add.split("|")]
-        if len(part) == 4:
-            manual = dict(text=part[0], head=part[1], kind=part[2], mean=part[3])
-            entries.append(manual)
+    manuals = []
+    for spec in adds or []:
+        part = [x.strip() for x in spec.split("|")]
+        if len(part) != 4:
+            print(f"--add 需要 词组|词头|类型|释义 四段：{spec}")
+            return 2
+        m = dict(text=part[0], head=part[1], kind=part[2], mean=part[3])
+        first = re.match(r"[A-Za-z]+", m["text"])
+        first = first.group(0).lower() if first else ""
+        if first and first not in ("be", "a") and first != m["head"].lower():
+            print(f"--add 词头应为「{first}」而非「{m['head']}」：{m['text']}")
+            return 2
+        if m["text"].lower() in {e["text"].lower() for e in entries}:
+            print(f"总表已有，忽略 --add：{m['text']}")
+            continue
+        manuals.append(m)
+        entries.append(m)
 
     try:
         text = read_text(src)
@@ -613,50 +639,68 @@ def main(src=None, outdir=None, existing=None, source=None, add=None, refresh=Fa
 
     counted = count_entries(text, entries)
     rows, added, updated = merge_rows(old_rows, counted)
-    if manual and manual["text"] not in {r["text"] for r in rows}:
-        got = count_entries(text, [manual])
-        rows.append(dict(manual, freq=got[0]["freq"] or 1))
-        added += 1
+    for m in manuals:
+        if m["text"].lower() not in {r["text"].lower() for r in rows}:
+            got = count_entries(text, [m])
+            rows.append(dict(m, freq=got[0]["freq"] or 1))
+            added += 1
 
-    src_name = source or Path(src).name
-    log.append([datetime.now().strftime("%Y-%m-%d %H:%M"), src_name, added, updated, len(rows)])
+    drop_set = {d.strip().lower() for d in (drops or []) if d.strip()}
+    dropped = []
+    if drop_set:
+        dropped = [r["text"] for r in rows if r["text"].lower() in drop_set]
+        rows = [r for r in rows if r["text"].lower() not in drop_set]
+        print(f"删除 {len(dropped)} 条：{'、'.join(dropped) or '（表里没有，未删）'}")
+
+    log.append(
+        [datetime.now().strftime("%Y-%m-%d %H:%M"), src_name, added, updated, len(dropped), len(rows)]
+    )
     try:
         heads, total = write_outputs(rows, out, log, keep_from=existing)
     except PermissionError:
         print(f"文件被占用（可能已在 Excel / Word 里打开）：{out}，关闭后重试。")
         return 1
 
-    print(f"并入 {src_name}：新增 {added} 条，更新 {updated} 条")
+    print(f"并入 {src_name}：净增 {added} 条，更新 {updated} 条")
     print(f"写入：{out.resolve()}（xlsx / csv / docx 三份同步更新）")
     print(f"词组 {len(rows)} 条 / 词头 {len(heads)} 个 / 累计频次 {total}")
-    top = sorted(rows, key=lambda e: -e["freq"])[:15]
+    top = sorted(rows, key=lambda e: (-e["freq"], e["text"]))[:15]
     print("Top 15：", "、".join(f"{e['text']}({e['freq']})" for e in top))
     return 0
 
 
 USAGE = (
     "用法：python build_kaoyan_vocab.py <材料.docx|材料.txt> [输出目录] "
-    "[--existing 总表.xlsx] [--source 材料名] [--add 词组|词头|类型|释义]\n"
+    "[--existing 总表.xlsx] [--source 材料名]\n"
+    "      [--add 词组|词头|类型|释义]...  [--drop 词组]...  [--force]\n"
     "      python build_kaoyan_vocab.py --refresh [输出目录]"
 )
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
-    opts = {"existing": None, "source": None, "add": None}
+    opts = {"existing": None, "source": None, "add": [], "drop": []}
     positional = []
     refresh = False
+    force = False
     i = 0
     while i < len(argv):
         a = argv[i]
         if a in ("-h", "--help"):
             print(USAGE)
             sys.exit(0)
-        if a == "--refresh":
-            refresh = True
+        if a in ("--refresh", "--force"):
+            if a == "--refresh":
+                refresh = True
+            else:
+                force = True
             i += 1
             continue
-        if a in ("--existing", "--source", "--add"):
+        if a in ("--existing", "--source"):
             opts[a[2:]] = argv[i + 1]
+            i += 2
+            continue
+        if a in ("--add", "--drop"):
+            opts[a[2:]].append(argv[i + 1])
             i += 2
             continue
         positional.append(a)
@@ -671,6 +715,8 @@ if __name__ == "__main__":
             opts["existing"],
             opts["source"],
             opts["add"],
+            opts["drop"],
             refresh,
+            force,
         )
     )
