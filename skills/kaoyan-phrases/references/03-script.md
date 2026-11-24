@@ -38,17 +38,22 @@ python -B "$SKILL\tools\build_kaoyan_vocab.py" "材料.docx" --source "材料名
 - 动词短语归动词：turn out / turn down 归 turn；介词、固定表达、名词搭配归首词，释义里点出搭配对象（narrow the gap 归 narrow，释义写「缩小（差距）」）。
 - `be` / `a` 开头的被动语态与数量搭配取实义词：be aimed at → aim，be based on → base，a number of → number。
 
-## 追加
+## 追加与删除
 
-本次材料里出现、总表还没有收的搭配，用 `--add` 写进总表，格式 `词组|词头|类型|释义`：
+新材料和它的新搭配**一条命令**并进去：材料路径走第一个位置参数，新条目用可重复的 `--add`，要移除的用 `--drop`：
 
 ```powershell
-python -B "$SKILL\tools\build_kaoyan_vocab.py" "材料.txt" --add "be captured by|capture|动词短语|被…记录；被…概括"
+python -B "$SKILL\tools\build_kaoyan_vocab.py" "材料.txt" --source "每日一题 2026-11-24" `
+  --add "follow up|follow|动词短语|跟进；采取后续行动" `
+  --add "cut costs|cut|动词短语|削减开支" `
+  --drop "take action"
 ```
 
-- 频次累计：并入一次加一次；本次没出现的行保持原频次。
-- 材料里没出现也直接入表，频次记 1。
-- 同一份材料只并一次，先看「处理记录」页确认。
+- `--add` 四段格式：词组|词头|类型|释义；总表已有的自动跳过，不会重复插入。
+- 材料里出现的已有条目累加频次；`--add` 的条目本次没出现也入表，频次记 1。
+- `--drop` 只从总表移除，条数记进「处理记录」的删除列。
+- 一次运行只写一行「处理记录」：日期、来源、新增、更新、删除、总条数。
+- 同一来源名默认拦截（退出码 3），防止同一份材料并两次把频次翻倍；确要重并加 `--force`。
 - 输出列固定为：词头、词组、频次、类型、释义。
 
 ## 重新生成
