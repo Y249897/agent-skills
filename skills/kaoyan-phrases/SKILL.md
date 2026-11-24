@@ -26,5 +26,5 @@ allowed-tools: Read, Write, Bash(python -B *)
 ## 三条规则
 
 1. **收整体记忆单位**：固定搭配与短语；单词、专名、自由组合、语法结构归各自的笔记。
-2. **一张总表**：`./kaoyan-phrases/kaoyan-vocab.xlsx` 是唯一数据源，脚本读出条目、累加频次、写回同一文件；新搭配用 `--add` 写进总表。三份产出都在原文件里更新，不新建日期文件，不另建文件夹。每次运行同步 `kaoyan-cards.csv` 与 `kaoyan-phrases.docx`。
+2. **一张总表**：`./kaoyan-phrases/kaoyan-vocab.xlsx` 是唯一数据源，脚本读出条目、累加频次、写回同一文件。新材料与它的新搭配用**一条命令**并进去：材料路径 + 多个 `--add 词组|词头|类型|释义` + 可选 `--drop 词组`。三份产出都在原文件里更新，不新建日期文件，不另建文件夹。
 3. **交付看得见**：先跑 `tools/check_outputs.py`，再贴 CSV、给绝对路径、给文件卡片。
